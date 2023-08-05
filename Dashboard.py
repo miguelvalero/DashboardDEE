@@ -1,5 +1,6 @@
 import base64
 import json
+import threading
 
 import tkinter as tk
 import cv2 as cv
@@ -11,7 +12,8 @@ from dashboardClasses.LEDsControllerClass import LEDsController
 from dashboardClasses.CameraControllerClass import CameraController
 from dashboardClasses.AutopilotControllerClass import AutopilotController
 from dashboardClasses.ShowRecordedPositionsClass import RecordedPositionsWindow
-
+from PIL import ImageTk, Image
+from dashboardClasses.AutopilotService import *
 
 class ConfigurationPanel:
     def buildFrame(self, fatherFrame, callback):
@@ -20,6 +22,7 @@ class ConfigurationPanel:
         self.ParameterFrame = tk.Frame(fatherFrame)
         self.ParameterFrame.rowconfigure(0, weight=4)
         self.ParameterFrame.rowconfigure(1, weight=1)
+        self.ParameterFrame.rowconfigure(2, weight=1)
 
         self.ParameterFrame.columnconfigure(0, weight=1)
         self.ParameterFrame.columnconfigure(1, weight=1)
@@ -72,6 +75,14 @@ class ConfigurationPanel:
             value="global",
             command=self.communicationModeChanged,
         ).grid(row=1, sticky="W")
+
+        tk.Radiobutton(
+            self.communicationModeFrame,
+            text="direct",
+            variable=self.var2,
+            value="direct",
+            command=self.communicationModeChanged,
+        ).grid(row=2, sticky="W")
 
         self.externalBrokerFrame = tk.LabelFrame(
             self.ParameterFrame, text="External broker"
@@ -167,7 +178,31 @@ class ConfigurationPanel:
             row=2, column=0, columnspan=5, padx=10, pady=10, sticky="nesw"
         )
 
+        self.image = Image.open("assets/global_simulation.png")
+        self.image = self.image.resize((700, 400), Image.ANTIALIAS)
+        self.bg = ImageTk.PhotoImage(self.image)
+        self.canvas = tk.Canvas(self.ParameterFrame, width=00, height=400)
+        self.canvas.grid(row=3, column=0, columnspan=5, padx=10, pady=10, sticky="nesw")
+
+        self.canvas.create_image(0, 0, image=self.bg, anchor="nw")
+
         return self.ParameterFrame
+
+    def changePicture (self, communication_mode, operation_mode):
+        file = "assets/"+communication_mode+'_'+operation_mode+'.png'
+        '''
+        if communication_mode == 'global' and operation_mode == 'simulation':
+            self.image = Image.open("assets/global_simulation.png")
+        if communication_mode == 'global' and operation_mode == 'production':
+            self.image = Image.open("assets/global_production.png")
+        '''
+        self.image = Image.open(file)
+        self.image = self.image.resize((700, 400), Image.ANTIALIAS)
+        self.bg = ImageTk.PhotoImage(self.image)
+        #self.canvas = tk.Canvas(self.ParameterFrame, width=500, height=400)
+        #self.canvas.grid(row=3, column=0, columnspan=5, padx=10, pady=10, sticky="nesw")
+
+        self.canvas.create_image(0, 0, image=self.bg, anchor="nw")
 
     def credentialsToggle(self):
         if self.var3.get() == "classpip.upc.edu":
@@ -176,7 +211,7 @@ class ConfigurationPanel:
             self.credentialsFrame.grid_forget()
 
     def communicationModeChanged(self):
-        if self.var2.get() == "local":
+        if self.var2.get() == "local" or self.var2.get() == "direct":
             for checkBox in self.dataServiceCheckBox:
                 checkBox.pack_forget()
         else:
@@ -189,16 +224,29 @@ class ConfigurationPanel:
             self.externalBrokerOption3.grid(row=2, sticky="W")
             if self.var3.get() == "classpip.upc.edu":
                 self.credentialsFrame.grid(row=3, sticky="W")
+        elif self.var1.get() == "production" and self.var2.get() == "global":
+            self.externalBrokerOption1.grid_forget()
+            self.externalBrokerOption2.grid(row=1, sticky="W")
+            self.externalBrokerOption3.grid(row=2, sticky="W")
+            if self.var3.get() == "classpip.upc.edu":
+                self.credentialsFrame.grid(row=3, sticky="W")
         else:
             self.externalBrokerOption1.grid_forget()
             self.externalBrokerOption2.grid_forget()
             self.externalBrokerOption3.grid_forget()
             if self.var3.get() == "classpip.upc.edu":
                 self.credentialsFrame.grid_forget()
-
+        self.changePicture(self.var2.get(), self.var1.get())
     def operationModeChanged(self):
         if self.var1.get() == "simulation" and self.var2.get() == "global":
             self.externalBrokerOption1.grid(row=0, sticky="W")
+            self.externalBrokerOption2.grid(row=1, sticky="W")
+            self.externalBrokerOption3.grid(row=2, sticky="W")
+            if self.var3.get() == "classpip.upc.edu":
+                self.credentialsFrame.grid(row=3, sticky="W")
+        elif self.var1.get() == "production" and self.var2.get() == "global":
+            print ('este es el caso')
+            self.externalBrokerOption1.grid_forget()
             self.externalBrokerOption2.grid(row=1, sticky="W")
             self.externalBrokerOption3.grid(row=2, sticky="W")
             if self.var3.get() == "classpip.upc.edu":
@@ -210,6 +258,7 @@ class ConfigurationPanel:
             if self.var3.get() == "classpip.upc.edu":
                 self.credentialsFrame.grid_forget()
 
+        self.changePicture(self.var2.get(), self.var1.get())
     def closeButtonClicked(self):
 
         monitorOptions = []
@@ -289,10 +338,22 @@ def configure(configuration_parameters):
     global panelFrame
     global client
 
-    if configuration_parameters["communicationMode"] == "global":
-        external_broker_address = configuration_parameters["externalBroker"]
-    else:
+    if  configuration_parameters["communicationMode"] == "global":
+            external_broker_address = configuration_parameters["externalBroker"]
+
+    elif configuration_parameters["communicationMode"] == "direct":
         external_broker_address = "localhost"
+        print ('pongo en marcha el autopilot service')
+        w = threading.Thread(target=AutopilotService, )
+        w.start()
+    else:
+        if configuration_parameters["operationMode"] == "simulation":
+            external_broker_address = 'localhost'
+        else:
+            external_broker_address = "10.10.10.1"
+            #external_broker_address = "192.168.208.2"
+
+
 
     # the external broker must run always in port 8000
     external_broker_port = 8000
@@ -303,6 +364,7 @@ def configure(configuration_parameters):
         client.username_pw_set(
             configuration_parameters["username"], configuration_parameters["pass"]
         )
+    print ('me conecto a ', external_broker_address, external_broker_port)
 
     client.connect(external_broker_address, external_broker_port)
     client.loop_start()
@@ -330,7 +392,7 @@ def configure(configuration_parameters):
 master = tk.Tk()
 new_window = tk.Toplevel(master)
 new_window.title("Configuration panel")
-new_window.geometry("900x300")
+new_window.geometry("900x600")
 confPanel = ConfigurationPanel()
 confPanelFrame = confPanel.buildFrame(new_window, configure)
 confPanelFrame.pack()
