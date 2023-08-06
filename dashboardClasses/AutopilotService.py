@@ -307,6 +307,7 @@ def process_message(message, client):
     global sending_topic
     global sending_topic
     global state
+    global operationMode
 
     splited = message.topic.split("/")
     origin = splited[0]
@@ -321,13 +322,12 @@ def process_message(message, client):
             #mavproxy - -master =COM12 - -out = udp:127.0.0.1: 14550 - -out = udp:127.0.0.1: 14551
             # ahora el servicio puede conectarse por udp a cualquira de los dos puertos 14550 o 14551 y Mission Planner
             # al otro
-
-
-            connection_string = "com8"
-            #connection_string = "udp:127.0.0.1:14550"
-            vehicle = connect(connection_string, wait_ready=False, baud=57600)
-
-            vehicle.wait_ready(True, timeout=5000)
+            if operationMode == 'simulation':
+                vehicle = connect("tcp:127.0.0.1:5763", wait_ready=False, baud=115200)
+                vehicle.wait_ready(True, timeout=5000)
+            else:
+                vehicle = connect("udp:127.0.0.1:14550", wait_ready=False, baud=57600)
+                vehicle.wait_ready(True, timeout=5000)
 
             print ('Connected to flight controller')
             state = 'connected'
@@ -433,12 +433,14 @@ def on_external_message(client, userdata, message):
     global external_client
     process_message(message, external_client)
 
-def AutopilotService ():
+def AutopilotService (opMode):
     global op_mode
     global external_client
     global internal_client
     global state
+    global operationMode
 
+    operationMode = opMode
     state = 'disconnected'
     external_broker_address = 'localhost'
     external_broker_port = 8000
