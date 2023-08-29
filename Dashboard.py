@@ -1,7 +1,11 @@
 import base64
 import json
+from paho.mqtt.client import ssl
+import threading
 
 import tkinter as tk
+from tkinter import simpledialog, messagebox
+
 import cv2 as cv
 import numpy as np
 
@@ -11,6 +15,68 @@ from dashboardClasses.LEDsControllerClass import LEDsController
 from dashboardClasses.CameraControllerClass import CameraController
 from dashboardClasses.AutopilotControllerClass import AutopilotController
 from dashboardClasses.ShowRecordedPositionsClass import RecordedPositionsWindow
+from PIL import ImageTk, Image
+from dashboardClasses.AutopilotService import *
+
+from tkinter import simpledialog
+
+
+class MyDialog(tk.simpledialog.Dialog):
+    def __init__(self, parent, title):
+        self.my_username = None
+        self.my_password = None
+        super().__init__(parent, title)
+
+    def body(self, frame):
+        # print(type(frame)) # tkinter.Frame
+        self.my_username_label = tk.Label(frame, width=25, text="Username")
+        self.my_username_label.pack()
+        self.my_username_box = tk.Entry(frame, width=25)
+        self.my_username_box.pack()
+
+        self.my_password_label = tk.Label(frame, width=25, text="Password")
+        self.my_password_label.pack()
+        self.my_password_box = tk.Entry(frame, width=25)
+        self.my_password_box.pack()
+        self.my_password_box["show"] = "*"
+
+        return frame
+
+    def ok_pressed(self):
+        self.my_username = self.my_username_box.get()
+        self.my_password = self.my_password_box.get()
+        self.destroy()
+
+    def cancel_pressed(self):
+        self.destroy()
+
+    def buttonbox(self):
+        self.ok_button = tk.Button(self, text="OK", width=5, command=self.ok_pressed)
+        self.ok_button.pack(side="left")
+        cancel_button = tk.Button(
+            self, text="Cancel", width=5, command=self.cancel_pressed
+        )
+        cancel_button.pack(side="right")
+        self.bind("<Return>", lambda event: self.ok_pressed())
+        self.bind("<Escape>", lambda event: self.cancel_pressed())
+
+
+class CredentialsInput(simpledialog.Dialog):
+    def body(self, master):
+
+        tk.Label(master, text="Username:").grid(row=0)
+        tk.Label(master, text="Password:").grid(row=1)
+
+        self.e1 = tk.Entry(master)
+        self.e2 = tk.Entry(master)
+
+        self.e1.grid(row=0, column=1)
+        self.e2.grid(row=1, column=1)
+        return self.e1  # initial focus
+
+    def apply(self):
+        self.username = self.e1.get()
+        self.password = self.e2.get()
 
 
 class ConfigurationPanel:
@@ -18,8 +84,9 @@ class ConfigurationPanel:
         self.callback = callback
         self.fatherFrame = fatherFrame
         self.ParameterFrame = tk.Frame(fatherFrame)
-        self.ParameterFrame.rowconfigure(0, weight=4)
+        self.ParameterFrame.rowconfigure(0, weight=6)
         self.ParameterFrame.rowconfigure(1, weight=1)
+        self.ParameterFrame.rowconfigure(2, weight=1)
 
         self.ParameterFrame.columnconfigure(0, weight=1)
         self.ParameterFrame.columnconfigure(1, weight=1)
@@ -73,40 +140,60 @@ class ConfigurationPanel:
             command=self.communicationModeChanged,
         ).grid(row=1, sticky="W")
 
+        tk.Radiobutton(
+            self.communicationModeFrame,
+            text="direct",
+            variable=self.var2,
+            value="direct",
+            command=self.communicationModeChanged,
+        ).grid(row=2, sticky="W")
+
         self.externalBrokerFrame = tk.LabelFrame(
             self.ParameterFrame, text="External broker"
         )
-        self.externalBrokerFrame.grid(row=0, column=2, padx=10, pady=10, sticky="nesw")
+        self.externalBrokerFrame.grid(
+            row=0, column=2, padx=10, pady=(10, 0), sticky="nesw"
+        )
         self.var3 = tk.StringVar()
-        self.var3.set("localhost")
+        self.var3.set("hivemq")
+
         self.externalBrokerOption1 = tk.Radiobutton(
             self.externalBrokerFrame,
-            text="localhost",
+            text="hivemq",
             variable=self.var3,
-            value="localhost",
+            value="hivemq",
             command=self.credentialsToggle,
         )
         self.externalBrokerOption1.grid(row=0, sticky="W")
 
         self.externalBrokerOption2 = tk.Radiobutton(
             self.externalBrokerFrame,
-            text="broker.hivemq.com",
+            text="hivemq (certificate)",
             variable=self.var3,
-            value="broker.hivemq.com",
+            value="hivemq_cert",
             command=self.credentialsToggle,
         )
         self.externalBrokerOption2.grid(row=1, sticky="W")
 
         self.externalBrokerOption3 = tk.Radiobutton(
             self.externalBrokerFrame,
-            text="classpip.upc.edu",
+            text="classpip (certificate)",
             variable=self.var3,
-            value="classpip.upc.edu",
+            value="classpip_cert",
             command=self.credentialsToggle,
         )
         self.externalBrokerOption3.grid(row=2, sticky="W")
 
-        self.credentialsFrame = tk.LabelFrame(
+        self.externalBrokerOption4 = tk.Radiobutton(
+            self.externalBrokerFrame,
+            text="classpip (credentials)",
+            variable=self.var3,
+            value="classpip_cred",
+            command=self.credentialsToggle,
+        )
+        self.externalBrokerOption4.grid(row=3, sticky="W")
+
+        """  self.credentialsFrame = tk.LabelFrame(
             self.externalBrokerFrame, text="Credentials"
         )
 
@@ -118,7 +205,7 @@ class ConfigurationPanel:
         self.passLbl.grid(row=1, column=0)
         self.passBox = tk.Entry(self.credentialsFrame)
         self.passBox.grid(row=1, column=1)
-
+        """
         self.monitorFrame = tk.LabelFrame(self.ParameterFrame, text="Monitor")
         self.monitorFrame.grid(row=0, column=3, padx=10, pady=10, sticky="nesw")
         self.monitorOptions = [
@@ -167,48 +254,96 @@ class ConfigurationPanel:
             row=2, column=0, columnspan=5, padx=10, pady=10, sticky="nesw"
         )
 
+        self.image = Image.open("assets/global_simulation.png")
+        self.image = self.image.resize((700, 400), Image.ANTIALIAS)
+        self.bg = ImageTk.PhotoImage(self.image)
+        self.canvas = tk.Canvas(self.ParameterFrame, width=00, height=400)
+        self.canvas.grid(row=3, column=0, columnspan=5, padx=10, pady=10, sticky="nesw")
+
+        self.canvas.create_image(0, 0, image=self.bg, anchor="nw")
+
         return self.ParameterFrame
 
+    def changePicture(self, communication_mode, operation_mode):
+        file = "assets/" + communication_mode + "_" + operation_mode + ".png"
+        """
+        if communication_mode == 'global' and operation_mode == 'simulation':
+            self.image = Image.open("assets/global_simulation.png")
+        if communication_mode == 'global' and operation_mode == 'production':
+            self.image = Image.open("assets/global_production.png")
+        """
+        self.image = Image.open(file)
+        self.image = self.image.resize((700, 400), Image.ANTIALIAS)
+        self.bg = ImageTk.PhotoImage(self.image)
+        # self.canvas = tk.Canvas(self.ParameterFrame, width=500, height=400)
+        # self.canvas.grid(row=3, column=0, columnspan=5, padx=10, pady=10, sticky="nesw")
+
+        self.canvas.create_image(0, 0, image=self.bg, anchor="nw")
+
     def credentialsToggle(self):
-        if self.var3.get() == "classpip.upc.edu":
-            self.credentialsFrame.grid(row=3, sticky="W")
-        else:
-            self.credentialsFrame.grid_forget()
+        if self.var3.get() == "classpip_cred" or self.var3.get() == "classpip_cert":
+            dialog = MyDialog(title="Credentials", parent=self.fatherFrame)
+            self.username = dialog.my_username
+            self.password = dialog.my_password
+
+            """res = CredentialsInput(title="Credentials", parent=self.fatherFrame)
+            self.username = res.username
+            self.password = res.password"""
+
+            """  username = simpledialog.askstring("Login", "Username for classpip")
+            password = simpledialog.askstring("Login", "Password for classpip", show='*')
+            self.username = 'dronsEETAC'
+            self.password = 'mimara1456.'
+              if username and password:
+                messagebox.showinfo("OK")
+            else:
+                messagebox.showinfo("Username or password missing")
+            """
+            """   else:
+            self.credentialsFrame.grid_forget()"""
 
     def communicationModeChanged(self):
-        if self.var2.get() == "local":
+        if self.var2.get() == "local" or self.var2.get() == "direct":
             for checkBox in self.dataServiceCheckBox:
                 checkBox.pack_forget()
         else:
             for checkBox in self.dataServiceCheckBox:
                 checkBox.pack()
 
-        if self.var1.get() == "simulation" and self.var2.get() == "global":
+        if self.var2.get() == "global":
             self.externalBrokerOption1.grid(row=0, sticky="W")
             self.externalBrokerOption2.grid(row=1, sticky="W")
             self.externalBrokerOption3.grid(row=2, sticky="W")
-            if self.var3.get() == "classpip.upc.edu":
-                self.credentialsFrame.grid(row=3, sticky="W")
+            self.externalBrokerOption4.grid(row=2, sticky="W")
+            # if self.var3.get() == "classpip.upc.edu":
+            #    self.credentialsFrame.grid(row=3, sticky="W")
+
         else:
             self.externalBrokerOption1.grid_forget()
             self.externalBrokerOption2.grid_forget()
             self.externalBrokerOption3.grid_forget()
-            if self.var3.get() == "classpip.upc.edu":
-                self.credentialsFrame.grid_forget()
+            self.externalBrokerOption4.grid_forget()
+            # if self.var3.get() == "classpip.upc.edu":
+            #    self.credentialsFrame.grid_forget()
+        self.changePicture(self.var2.get(), self.var1.get())
 
     def operationModeChanged(self):
-        if self.var1.get() == "simulation" and self.var2.get() == "global":
+        if self.var2.get() == "global":
             self.externalBrokerOption1.grid(row=0, sticky="W")
             self.externalBrokerOption2.grid(row=1, sticky="W")
             self.externalBrokerOption3.grid(row=2, sticky="W")
-            if self.var3.get() == "classpip.upc.edu":
-                self.credentialsFrame.grid(row=3, sticky="W")
+            self.externalBrokerOption3.grid(row=2, sticky="W")
+            # if self.var3.get() == "classpip.upc.edu":
+            #    self.credentialsFrame.grid(row=3, sticky="W")
         else:
             self.externalBrokerOption1.grid_forget()
             self.externalBrokerOption2.grid_forget()
             self.externalBrokerOption3.grid_forget()
-            if self.var3.get() == "classpip.upc.edu":
-                self.credentialsFrame.grid_forget()
+            self.externalBrokerOption4.grid_forget()
+            # if self.var3.get() == "classpip.upc.edu":
+            #    self.credentialsFrame.grid_forget()
+
+        self.changePicture(self.var2.get(), self.var1.get())
 
     def closeButtonClicked(self):
 
@@ -229,9 +364,11 @@ class ConfigurationPanel:
             "monitorOptions": monitorOptions,
             "dataServiceOptions": dataServiceOptions,
         }
-        if self.var3.get() == "classpip.upc.edu":
-            parameters["username"] = self.usernameBox.get()
-            parameters["pass"] = self.passBox.get()
+        if self.var3.get() == "classpip_cred" or self.var3.get() == "classpip_cert":
+            """parameters["username"] = self.usernameBox.get()
+            parameters["pass"] = self.passBox.get()"""
+            parameters["username"] = self.username
+            parameters["pass"] = self.password
 
         self.callback(parameters)
         self.fatherFrame.destroy()
@@ -285,26 +422,79 @@ def on_message(client, userdata, message):
         myRecordedPositionsWindow.putStoredPositions(data_json)
 
 
+def on_connect(client, userdata, flags, rc):
+    if rc == 0:
+        print("Connection OK")
+    else:
+        messagebox.showinfo("Bad connection")
+        print("Bad connection")
+
+
 def configure(configuration_parameters):
     global panelFrame
     global client
-
-    if configuration_parameters["communicationMode"] == "global":
-        external_broker_address = configuration_parameters["externalBroker"]
-    else:
-        external_broker_address = "localhost"
-
-    # the external broker must run always in port 8000
-    external_broker_port = 8000
-
     client = mqtt.Client("Dashboard", transport="websockets")
     client.on_message = on_message
-    if external_broker_address == "classpip.upc.edu":
-        client.username_pw_set(
-            configuration_parameters["username"], configuration_parameters["pass"]
-        )
+    client.on_connect = on_connect
+    if configuration_parameters["communicationMode"] == "global":
+        if configuration_parameters["externalBroker"] == "hivemq":
+            client.connect("broker.hivemq.com", 8000)
+            print("Connected to broker.hivemq.com:8000")
 
-    client.connect(external_broker_address, external_broker_port)
+        elif configuration_parameters["externalBroker"] == "hivemq_cert":
+            client.tls_set(
+                ca_certs=None,
+                certfile=None,
+                keyfile=None,
+                cert_reqs=ssl.CERT_REQUIRED,
+                tls_version=ssl.PROTOCOL_TLS,
+                ciphers=None,
+            )
+            client.connect("broker.hivemq.com", 8884)
+            print("Connected to broker.hivemq.com:8884")
+
+        elif configuration_parameters["externalBroker"] == "classpip_cred":
+            client.username_pw_set(
+                configuration_parameters["username"], configuration_parameters["pass"]
+            )
+            print(configuration_parameters["username"])
+            client.connect("classpip.upc.edu", 8000)
+            print("Connected to classpip.upc.edu:8000")
+
+        elif configuration_parameters["externalBroker"] == "classpip_cert":
+            client.username_pw_set(
+                configuration_parameters["username"], configuration_parameters["pass"]
+            )
+            client.tls_set(
+                ca_certs=None,
+                certfile=None,
+                keyfile=None,
+                cert_reqs=ssl.CERT_REQUIRED,
+                tls_version=ssl.PROTOCOL_TLS,
+                ciphers=None,
+            )
+            client.connect("classpip.upc.edu", 8883)
+            print("Connected to classpip.upc.edu:8883")
+
+    elif configuration_parameters["communicationMode"] == "local":
+        if configuration_parameters["operationMode"] == "simulation":
+            client.connect("localhost", 8000)
+            print("Connected to localhost:8000")
+        else:
+            client.connect("10.10.10.1", 8000)
+            print("Connected to 10.10.10.1:8000")
+
+    else:  # direct communication mode
+        client.connect("localhost", 8000)
+        # run Autopilot service in local
+        w = threading.Thread(
+            target=AutopilotService,
+            args=[
+                configuration_parameters["operationMode"],
+            ],
+        )
+        w.start()
+
     client.loop_start()
     client.subscribe("+/dashBoard/#")
 
@@ -330,11 +520,10 @@ def configure(configuration_parameters):
 master = tk.Tk()
 new_window = tk.Toplevel(master)
 new_window.title("Configuration panel")
-new_window.geometry("900x300")
+new_window.geometry("900x600")
 confPanel = ConfigurationPanel()
 confPanelFrame = confPanel.buildFrame(new_window, configure)
 confPanelFrame.pack()
-
 
 master.title("Main window")
 master.geometry("1150x600")
