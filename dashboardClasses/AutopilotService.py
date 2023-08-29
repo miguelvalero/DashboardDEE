@@ -25,6 +25,7 @@ def arm():
         time.sleep(1)
     print(" Armed")
 
+
 def take_off(a_target_altitude, manualControl):
     global state
     vehicle.simple_takeoff(a_target_altitude)
@@ -36,7 +37,7 @@ def take_off(a_target_altitude, manualControl):
             break
         time.sleep(1)
 
-    state = 'flying'
+    state = "flying"
     if manualControl:
         w = threading.Thread(target=flying)
         w.start()
@@ -66,7 +67,9 @@ def prepare_command(velocity_x, velocity_y, velocity_z):
     )  # yaw, yaw_rate (not supported yet, ignored in GCS_Mavlink)
 
     return msg
-'''
+
+
+"""
 These are the different values for the state of the autopilot:
     'connected' (only when connected the telemetry_info packet will be sent every 250 miliseconds)
     'arming'
@@ -78,20 +81,22 @@ These are the different values for the state of the autopilot:
     'landing'
     'onHearth'
 
-The autopilot can also be 'disconnected' but this state will never appear in the telemetry_info packet 
+The autopilot can also be 'disconnected' but this state will never appear in the telemetry_info packet
 when disconnected the service will not send any packet
-'''
-def get_telemetry_info ():
+"""
+
+
+def get_telemetry_info():
     global state
-    print ('estado ', state)
+    print("estado ", state)
     telemetry_info = {
-        'lat': vehicle.location.global_frame.lat,
-        'lon': vehicle.location.global_frame.lon,
-        'heading': vehicle.heading,
-        'groundSpeed': vehicle.groundspeed,
-        'altitude': vehicle.location.global_relative_frame.alt,
-        'battery': vehicle.battery.level,
-        'state': state
+        "lat": vehicle.location.global_frame.lat,
+        "lon": vehicle.location.global_frame.lon,
+        "heading": vehicle.heading,
+        "groundSpeed": vehicle.groundspeed,
+        "altitude": vehicle.location.global_relative_frame.alt,
+        "battery": vehicle.battery.level,
+        "state": state,
     }
     return telemetry_info
 
@@ -102,7 +107,9 @@ def send_telemetry_info():
     global sending_topic
 
     while sending_telemetry_info:
-        external_client.publish(sending_topic + "/telemetryInfo", json.dumps(get_telemetry_info()))
+        external_client.publish(
+            sending_topic + "/telemetryInfo", json.dumps(get_telemetry_info())
+        )
         time.sleep(0.25)
 
 
@@ -116,7 +123,8 @@ def returning():
     # wait until the drone is at home
     while vehicle.armed:
         time.sleep(1)
-    state = 'onHearth'
+    state = "onHearth"
+
 
 def flying():
     global direction
@@ -130,9 +138,9 @@ def flying():
             vehicle.send_mavlink(cmd)
             time.sleep(1)
         # a new go command has been received. Check direction
-        print ('salgo del bucle por ', direction)
+        print("salgo del bucle por ", direction)
         if direction == "North":
-            print ('vamos al norte')
+            print("vamos al norte")
             cmd = prepare_command(speed, 0, 0)  # NORTH
         if direction == "South":
             cmd = prepare_command(-speed, 0, 0)  # SOUTH
@@ -154,7 +162,6 @@ def flying():
             end = True
 
 
-
 def distanceInMeters(aLocation1, aLocation2):
     """
     Returns the ground distance in metres between two LocationGlobal objects.
@@ -165,7 +172,8 @@ def distanceInMeters(aLocation1, aLocation2):
     """
     dlat = aLocation2.lat - aLocation1.lat
     dlong = aLocation2.lon - aLocation1.lon
-    return math.sqrt((dlat*dlat) + (dlong*dlong)) * 1.113195e5
+    return math.sqrt((dlat * dlat) + (dlong * dlong)) * 1.113195e5
+
 
 def executeFlightPlan(waypoints_json):
     global vehicle
@@ -173,50 +181,51 @@ def executeFlightPlan(waypoints_json):
     global sending_topic
     global state
 
-
-
     altitude = 6
-    origin = sending_topic.split('/')[1]
+    origin = sending_topic.split("/")[1]
 
     waypoints = json.loads(waypoints_json)
 
-    state = 'arming'
+    state = "arming"
     arm()
-    state = 'takingOff'
+    state = "takingOff"
     take_off(altitude, False)
-    state = 'flying'
-    #vehicle.groundspeed=3
+    state = "flying"
+    # vehicle.groundspeed=3
 
     wp = waypoints[0]
-    originPoint = dronekit.LocationGlobalRelative(float(wp['lat']), float(wp['lon']), altitude)
+    originPoint = dronekit.LocationGlobalRelative(
+        float(wp["lat"]), float(wp["lon"]), altitude
+    )
 
     distanceThreshold = 0.50
-    for wp in waypoints [1:]:
+    for wp in waypoints[1:]:
 
-        destinationPoint = dronekit.LocationGlobalRelative(float(wp['lat']),float(wp['lon']), altitude)
+        destinationPoint = dronekit.LocationGlobalRelative(
+            float(wp["lat"]), float(wp["lon"]), altitude
+        )
         vehicle.simple_goto(destinationPoint, groundspeed=3)
 
         currentLocation = vehicle.location.global_frame
-        dist = distanceInMeters (destinationPoint,currentLocation)
+        dist = distanceInMeters(destinationPoint, currentLocation)
 
         while dist > distanceThreshold:
             time.sleep(0.25)
             currentLocation = vehicle.location.global_frame
             dist = distanceInMeters(destinationPoint, currentLocation)
-        print ('reached')
-        waypointReached = {
-            'lat':currentLocation.lat,
-            'lon':currentLocation.lon
-        }
+        print("reached")
+        waypointReached = {"lat": currentLocation.lat, "lon": currentLocation.lon}
 
-        external_client.publish(sending_topic + "/waypointReached", json.dumps(waypointReached))
+        external_client.publish(
+            sending_topic + "/waypointReached", json.dumps(waypointReached)
+        )
 
-        if wp['takePic']:
+        if wp["takePic"]:
             # ask to send a picture to origin
             internal_client.publish(origin + "/cameraService/takePicture")
 
     vehicle.mode = dronekit.VehicleMode("RTL")
-    state = 'returningHome'
+    state = "returningHome"
 
     currentLocation = vehicle.location.global_frame
     dist = distanceInMeters(originPoint, currentLocation)
@@ -226,10 +235,10 @@ def executeFlightPlan(waypoints_json):
         currentLocation = vehicle.location.global_frame
         dist = distanceInMeters(originPoint, currentLocation)
 
-    state = 'landing'
+    state = "landing"
     while vehicle.armed:
         time.sleep(1)
-    state = 'onHearth'
+    state = "onHearth"
 
 
 def executeFlightPlan2(waypoints_json):
@@ -238,30 +247,58 @@ def executeFlightPlan2(waypoints_json):
     global sending_topic
     global state
 
-
-
     altitude = 6
-    origin = sending_topic.split('/')[1]
+    origin = sending_topic.split("/")[1]
 
     waypoints = json.loads(waypoints_json)
-    state = 'arming'
+    state = "arming"
     arm()
-    state = 'takingOff'
+    state = "takingOff"
     take_off(altitude, False)
-    state = 'flying'
+    state = "flying"
     cmds = vehicle.commands
     cmds.clear()
 
-    #wp = waypoints[0]
-    #originPoint = dronekit.LocationGlobalRelative(float(wp['lat']), float(wp['lon']), altitude)
+    # wp = waypoints[0]
+    # originPoint = dronekit.LocationGlobalRelative(float(wp['lat']), float(wp['lon']), altitude)
     for wp in waypoints:
         cmds.add(
-            Command(0, 0, 0, mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT, mavutil.mavlink.MAV_CMD_NAV_WAYPOINT, 0, 0,
-                    0, 0, 0, 0, float(wp['lat']), float(wp['lon']), altitude))
+            Command(
+                0,
+                0,
+                0,
+                mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT,
+                mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                float(wp["lat"]),
+                float(wp["lon"]),
+                altitude,
+            )
+        )
     wp = waypoints[0]
     cmds.add(
-        Command(0, 0, 0, mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT, mavutil.mavlink.MAV_CMD_NAV_WAYPOINT, 0, 0,
-                0, 0, 0, 0, float(wp['lat']), float(wp['lon']), altitude))
+        Command(
+            0,
+            0,
+            0,
+            mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT,
+            mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            float(wp["lat"]),
+            float(wp["lon"]),
+            altitude,
+        )
+    )
     cmds.upload()
 
     vehicle.commands.next = 0
@@ -269,34 +306,35 @@ def executeFlightPlan2(waypoints_json):
     vehicle.mode = VehicleMode("AUTO")
     while True:
         nextwaypoint = vehicle.commands.next
-        print ('next ', nextwaypoint)
-        if nextwaypoint == len(waypoints):  # Dummy waypoint - as soon as we reach waypoint 4 this is true and we exit.
+        print("next ", nextwaypoint)
+        if nextwaypoint == len(
+            waypoints
+        ):  # Dummy waypoint - as soon as we reach waypoint 4 this is true and we exit.
             print("Last waypoint reached")
-            break;
+            break
         time.sleep(0.5)
 
-    print('Return to launch')
-    state = 'returningHome'
+    print("Return to launch")
+    state = "returningHome"
     vehicle.mode = VehicleMode("RTL")
     while vehicle.armed:
         time.sleep(1)
-    state = 'onHearth'
+    state = "onHearth"
+
 
 def set_direction(color):
-        if color == 'blueS':
-            return "North"
-        elif color == "yellow":
-            return "East"
-        elif color == 'green':
-            return "West"
-        elif color == 'pink':
-            return "South"
-        elif color == 'purple':
-            return "RTL"
-        else:
-            return "none"
-
-
+    if color == "blueS":
+        return "North"
+    elif color == "yellow":
+        return "East"
+    elif color == "green":
+        return "West"
+    elif color == "pink":
+        return "South"
+    elif color == "purple":
+        return "RTL"
+    else:
+        return "none"
 
 
 def process_message(message, client):
@@ -315,125 +353,125 @@ def process_message(message, client):
     sending_topic = "autopilotService/" + origin
 
     if command == "connect":
-        if state == 'disconnected':
+        if state == "disconnected":
             print("Autopilot service connected by " + origin)
-            #para conectar este autopilotService al dron al mismo tiempo que conectamos el Mission Planner
+            # para conectar este autopilotService al dron al mismo tiempo que conectamos el Mission Planner
             # hay que ejecutar el siguiente comando desde PowerShell desde  C:\Users\USER>
-            #mavproxy - -master =COM12 - -out = udp:127.0.0.1: 14550 - -out = udp:127.0.0.1: 14551
+            # mavproxy - -master =COM12 - -out = udp:127.0.0.1: 14550 - -out = udp:127.0.0.1: 14551
             # ahora el servicio puede conectarse por udp a cualquira de los dos puertos 14550 o 14551 y Mission Planner
             # al otro
-            if operationMode == 'simulation':
+            if operationMode == "simulation":
                 vehicle = connect("tcp:127.0.0.1:5763", wait_ready=False, baud=115200)
                 vehicle.wait_ready(True, timeout=5000)
             else:
                 vehicle = connect("udp:127.0.0.1:14550", wait_ready=False, baud=57600)
                 vehicle.wait_ready(True, timeout=5000)
 
-            print ('Connected to flight controller')
-            state = 'connected'
+            print("Connected to flight controller")
+            state = "connected"
 
-            #external_client.publish(sending_topic + "/connected", json.dumps(get_telemetry_info()))
-
+            # external_client.publish(sending_topic + "/connected", json.dumps(get_telemetry_info()))
 
             sending_telemetry_info = True
             y = threading.Thread(target=send_telemetry_info)
             y.start()
         else:
-            print ('Autopilot already connected')
-
-
+            print("Autopilot already connected")
 
     if command == "disconnect":
         vehicle.close()
         sending_telemetry_info = False
-        state = 'disconnected'
-
+        state = "disconnected"
 
     if command == "takeOff":
-        state = 'takingOff'
-        w = threading.Thread(target=take_off, args=[5,True ])
+        state = "takingOff"
+        w = threading.Thread(target=take_off, args=[5, True])
         w.start()
-
-
 
     if command == "returnToLaunch":
         # stop the process of getting positions
         vehicle.mode = dronekit.VehicleMode("RTL")
-        state = 'returningHome'
+        state = "returningHome"
         direction = "RTL"
         go = True
         w = threading.Thread(target=returning)
         w.start()
 
     if command == "armDrone":
-        print ('arming')
-        state = 'arming'
+        print("arming")
+        state = "arming"
         arm()
 
         # the vehicle will disarm automatically is takeOff does not come soon
         # when attribute 'armed' changes run function armed_change
-        vehicle.add_attribute_listener('armed', armed_change)
-        state = 'armed'
+        vehicle.add_attribute_listener("armed", armed_change)
+        state = "armed"
 
     if command == "disarmDrone":
         vehicle.armed = False
         while vehicle.armed:
             time.sleep(1)
-        state = 'disarmed'
-
+        state = "disarmed"
 
     if command == "land":
 
         vehicle.mode = dronekit.VehicleMode("LAND")
-        state = 'landing'
+        state = "landing"
         while vehicle.armed:
             time.sleep(1)
-        state = 'onHearth'
+        state = "onHearth"
 
     if command == "go":
         direction = message.payload.decode("utf-8")
         print("Going ", direction)
         go = True
 
-    if command == 'executeFlightPlan':
+    if command == "executeFlightPlan":
         waypoints_json = str(message.payload.decode("utf-8"))
-        w = threading.Thread(target=executeFlightPlan, args=[waypoints_json, ])
+        w = threading.Thread(
+            target=executeFlightPlan,
+            args=[
+                waypoints_json,
+            ],
+        )
         w.start()
 
-    if command == 'videoFrameWithColor':
-            # ya se está moviendo. Solo entonces hacemos caso de los colores
-            frameWithColor = json.loads(message.payload)
-            d = set_direction(frameWithColor['color'])
-            if d!= 'none':
-                direction = d
-                if direction == 'RTL':
-                    vehicle.mode = dronekit.VehicleMode("RTL")
-                    print ('cambio estado')
-                    state = 'returningHome'
-                    w = threading.Thread(target=returning)
-                    w.start()
+    if command == "videoFrameWithColor":
+        # ya se está moviendo. Solo entonces hacemos caso de los colores
+        frameWithColor = json.loads(message.payload)
+        d = set_direction(frameWithColor["color"])
+        if d != "none":
+            direction = d
+            if direction == "RTL":
+                vehicle.mode = dronekit.VehicleMode("RTL")
+                print("cambio estado")
+                state = "returningHome"
+                w = threading.Thread(target=returning)
+                w.start()
 
-                go = True
+            go = True
 
 
 def armed_change(self, attr_name, value):
     global vehicle
     global state
-    print ('cambio a ', )
+    print(
+        "cambio a ",
+    )
     if vehicle.armed:
-        state = 'armed'
+        state = "armed"
     else:
-        state = 'disarmed'
+        state = "disarmed"
 
-    print ('cambio a ', state)
-
+    print("cambio a ", state)
 
 
 def on_external_message(client, userdata, message):
     global external_client
     process_message(message, external_client)
 
-def AutopilotService (opMode):
+
+def AutopilotService(opMode):
     global op_mode
     global external_client
     global internal_client
@@ -441,8 +479,8 @@ def AutopilotService (opMode):
     global operationMode
 
     operationMode = opMode
-    state = 'disconnected'
-    external_broker_address = 'localhost'
+    state = "disconnected"
+    external_broker_address = "localhost"
     external_broker_port = 8000
     external_client = mqtt.Client("Autopilot_external", transport="websockets")
     external_client.on_message = on_external_message
@@ -451,5 +489,3 @@ def AutopilotService (opMode):
     print("Autopilot service waiting....")
     external_client.subscribe("+/autopilotService/#", 2)
     external_client.loop_forever()
-
-
